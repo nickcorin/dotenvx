@@ -59,7 +59,7 @@ t.test('#run (gitignore is ignoring .env.example file and shouldn\'t)', ct => {
   sinon.stub(fsx, 'readFileX').returns('.env*')
   sinon.stub(fsx, 'readdirSync').returns(['.env.example'])
   sinon.stub(Ls.prototype, 'run').returns(['.env.example'])
-  childProcess.execSync.returns(Buffer.from('.env.example'))
+  childProcess.execSync.returns(Buffer.from('MM .env.example'))
 
   const { warnings } = new Precommit().run()
 
@@ -72,7 +72,7 @@ t.test('#run (gitignore is ignoring .env.vault file and shouldn\'t)', ct => {
   sinon.stub(fsx, 'readFileX').returns('.env*')
   sinon.stub(fsx, 'readdirSync').returns(['.env.vault'])
   sinon.stub(Ls.prototype, 'run').returns(['.env.vault'])
-  childProcess.execSync.returns(Buffer.from('.env.vault'))
+  childProcess.execSync.returns(Buffer.from(' A .env.vault'))
 
   const { warnings } = new Precommit().run()
   ct.same(warnings[0].message, `${prefix} .env.vault (currently ignored but should not be)`)
@@ -80,9 +80,35 @@ t.test('#run (gitignore is ignoring .env.vault file and shouldn\'t)', ct => {
   ct.end()
 })
 
-t.test('#run (gitignore is not ignore .env.production file and should)', ct => {
+t.test('#run (git commit -a --dry-run --porcelain returns incorrect format)', ct => {
+  sinon.stub(Precommit.prototype, '_isInGitRepo').returns(true)
   sinon.stub(Ls.prototype, 'run').returns(['.env.production'])
   childProcess.execSync.returns(Buffer.from('.env.production'))
+  const readFileXStub = sinon.stub(fsx, 'readFileX')
+  // Stub different return values based on the file path
+  readFileXStub.callsFake((filePath) => {
+    if (filePath === '.env') {
+      return '.env'
+    } else if (filePath === '.env.production') {
+      return 'ENV_VAR=value'
+    }
+    return ''
+  })
+
+  try {
+    new Precommit().run()
+    ct.fail('should have raised an error but did not')
+  } catch (error) {
+    // It correctly fell to using the directory files and did not propagate the error.
+    ct.same(error.message, `${prefix} .env.production not protected (encrypted or gitignored)`)
+  }
+
+  ct.end()
+})
+
+t.test('#run (gitignore is not ignore .env.production file and should)', ct => {
+  sinon.stub(Ls.prototype, 'run').returns(['.env.production'])
+  childProcess.execSync.returns(Buffer.from('R  .env.dev -> .env.production'))
   const readFileXStub = sinon.stub(fsx, 'readFileX')
   // Stub different return values based on the file path
   readFileXStub.callsFake((filePath) => {
@@ -106,7 +132,7 @@ t.test('#run (gitignore is not ignore .env.production file and should)', ct => {
 
 t.test('#run (gitignore is not ignore .env.keys file and should)', ct => {
   sinon.stub(Ls.prototype, 'run').returns(['.env.keys'])
-  childProcess.execSync.returns(Buffer.from('.env.keys'))
+  childProcess.execSync.returns(Buffer.from(' M .env.keys'))
   const readFileXStub = sinon.stub(fsx, 'readFileX')
   // Stub different return values based on the file path
   readFileXStub.callsFake((filePath) => {
@@ -179,7 +205,7 @@ t.test('#run (gitignore is not ignore .env.production file and should) AND isInG
 
 t.test('#run (.env files in subfolders throw error in precommit hook)', ct => {
   sinon.stub(Ls.prototype, 'run').returns(['packages/app/.env.production'])
-  childProcess.execSync.returns(Buffer.from('packages/app/.env.production'))
+  childProcess.execSync.returns(Buffer.from('M  packages/app/.env.production'))
 
   const readFileXStub = sinon.stub(fsx, 'readFileX')
   readFileXStub.callsFake((filePath) => {
